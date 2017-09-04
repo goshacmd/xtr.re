@@ -15,18 +15,17 @@ type executionResult = list orderExecution;
 let emptyOrderbook: orderbook = { orders: [] };
 
 let makeOrder id price qty direction => { id, price, qty, direction };
+let isNotEmptyOrder order => order.qty > 0.0;
 let subQuantity qtyDiff order => makeOrder order.id order.price (order.qty -. qtyDiff) order.direction;
 
+let (mapPair, replace, joinList) = Util.(mapPair, replace, joinList);
+
 let addOrder order orderbook => { orders: orderbook.orders @ [order] };
-let replace wanted replacement x => if (x == wanted) { replacement } else { x };
-let isNotEmptyOrder order => order.qty > 0.0;
 let replaceOrder sourceOrder newOrder orderbook =>
-({ orders: (List.map (replace sourceOrder newOrder) orderbook.orders) });
+  ({ orders: (List.map (replace sourceOrder newOrder) orderbook.orders) });
 let cleanEmptyOrders orderbook =>
-({ orders: (List.filter isNotEmptyOrder orderbook.orders) });
+  ({ orders: (List.filter isNotEmptyOrder orderbook.orders) });
 
-
-let joinList = fun sep lst => List.fold_left (fun str x => if (str === "") { x } else { str ^ sep ^ x }) "" lst;
 let displayOrder order => (string_of_float order.price) ^ " (qty: " ^ (string_of_float order.qty) ^ ")";
 
 let displayOrderbook orderbook => {
@@ -66,19 +65,19 @@ let canFill targetOrder possibleFill => switch targetOrder.direction {
 };
 let executeMutualOrders order fill1 => {
   let qtyToFill = min fill1.qty order.qty;
-  let leftFill = subQuantity qtyToFill fill1;
-  let leftOrder = subQuantity qtyToFill order;
+  let (leftFill, leftOrder) = (fill1, order) |> mapPair (subQuantity qtyToFill);
+  let atPrice = fill1.price;
 
   let res1 = if (leftOrder.qty == 0.0) {
-    FullyExecuted order.id fill1.price
+    FullyExecuted order.id atPrice
   } else {
-    PartiallyExecuted order.id fill1.price qtyToFill
+    PartiallyExecuted order.id atPrice qtyToFill
   };
 
   let res2 = if (leftFill.qty == 0.0) {
-    FullyExecuted leftFill.id fill1.price
+    FullyExecuted leftFill.id atPrice
   } else {
-    PartiallyExecuted leftFill.id fill1.price qtyToFill
+    PartiallyExecuted leftFill.id atPrice qtyToFill
   };
 
   let executions = [res2, res1];
@@ -87,6 +86,7 @@ let executeMutualOrders order fill1 => {
 };
 let executeOrder order orderbook => {
   let possibleFills = List.filter (canFill order) orderbook.orders;
+
   let (newOrderbook, executions, _) = List.fold_left (fun (_orderbook, _executions, _order) fill => {
     let (leftOrder, leftFill, executions) = executeMutualOrders _order fill;
 
@@ -101,13 +101,12 @@ let executeOrder order orderbook => {
 
   (newOrderbook, executions);
 };
-let executeOn orderbook => {
+let executeOn orderbook => orderbook.orders |>
   List.fold_left (fun execution order => {
     let (_orderbook, executions) = execution;
     let (new_orderbook, new_executions) = executeOrder order (addOrder order _orderbook);
     (new_orderbook, executions @ new_executions)
-  }) ({ orders: [] }, []) orderbook.orders;
-};
+  }) ({ orders: [] }, []);
 
 
 let expect expectedOrderbook expectedExecutions actualOrderbook actualExecutions => {
