@@ -1,0 +1,15 @@
+{
+  "name": "xtr-reason",
+  "version": "0.1.0",
+  "scripts": {
+    "clean": "bsb -clean-world",
+    "build": "bsb -make-world",
+    "watch": "bsb -make-world -w"
+  },
+  "keywords": [
+    "BuckleScript"
+  ],
+  "devDependencies": {
+    "bs-platform": "1.9.1"
+  }
+}
