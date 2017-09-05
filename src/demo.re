@@ -10,7 +10,7 @@ type orderExecution =
   | PartiallyExecuted id price qty
   ;
 
-type executionResult = list orderExecution;
+type executionResult = list (orderExecution, orderExecution);
 
 let emptyOrderbook: orderbook = { orders: [] };
 
@@ -49,7 +49,8 @@ let displayExecution exec => switch exec {
   | PartiallyExecuted orderId price qty => "(Partially filled order #" ^ (string_of_int orderId) ^ ", " ^ (string_of_float qty) ^ " @ " ^ (string_of_float price) ^ ")"
 };
 let displayExecutions execs => execs
-  |> List.map displayExecution
+  |> List.map (mapPair displayExecution)
+  |> List.map (fun (a, b) => a ^ " + " ^ b)
   |> joinList "\n";
 
 
@@ -80,15 +81,15 @@ let executeMutualOrders order fill1 => {
     PartiallyExecuted leftFill.id atPrice qtyToFill
   };
 
-  let executions = [res2, res1];
+  let execution = (res2, res1);
 
-  (leftOrder, leftFill, executions);
+  (leftOrder, leftFill, execution);
 };
 let executeOrder order orderbook => {
   let possibleFills = List.filter (canFill order) orderbook.orders;
 
-  let (newOrderbook, executions, _) = List.fold_left (fun (_orderbook, _executions, _order) fill => {
-    let (leftOrder, leftFill, executions) = executeMutualOrders _order fill;
+  let (newOrderbook, executions, _) = List.fold_left (fun (_orderbook, executions, _order) fill => {
+    let (leftOrder, leftFill, execution) = executeMutualOrders _order fill;
 
     let newOrderbook = _orderbook
       |> replaceOrder _order leftOrder
@@ -96,7 +97,7 @@ let executeOrder order orderbook => {
       |> cleanEmptyOrders
       ;
 
-    (newOrderbook, _executions @ executions, leftOrder)
+    (newOrderbook, executions @ [execution], leftOrder)
   }) (orderbook, [], order) possibleFills;
 
   (newOrderbook, executions);
@@ -135,13 +136,13 @@ let test () => {
   let ob1 = emptyOrderbook |> addOrder o1 |> addOrder o2;
   let (ob2, ex1) = executeOn ob1;
 
-  expect ({ orders: [makeOrder 2 9.0 1.0 Sell] }) [(FullyExecuted 1 10.0), (PartiallyExecuted 2 10.0 1.0)] ob2 ex1;
+  expect ({ orders: [makeOrder 2 9.0 1.0 Sell] }) [(FullyExecuted 1 10.0, PartiallyExecuted 2 10.0 1.0)] ob2 ex1;
 
   let o3 = makeOrder 3 9.5 1.0 Sell;
   let o4 = makeOrder 4 10.0 2.0 Buy;
   let ob3 = ob2 |> addOrder o3 |> addOrder o4;
   let (ob4, ex2) = executeOn ob3;
 
-  expect ({ orders: [] }) [(FullyExecuted 2 9.0), (PartiallyExecuted 4 9.0 1.0), (FullyExecuted 3 9.5), (FullyExecuted 4 9.5)] ob4 ex2;
+  expect ({ orders: [] }) [(FullyExecuted 2 9.0, PartiallyExecuted 4 9.0 1.0), (FullyExecuted 3 9.5, FullyExecuted 4 9.5)] ob4 ex2;
 };
 test ();
