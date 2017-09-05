@@ -3,7 +3,7 @@ type price = float;
 type qty = float;
 type direction = Buy | Sell;
 type order = { id, price, qty, direction };
-type orderbook = { orders: list order };
+type orderbook = { buys: list order, sells: list order };
 
 type orderFulfilment  =
   | FullFulfilment id price
@@ -12,7 +12,7 @@ type orderFulfilment  =
 
 type orderExecution = Execution orderFulfilment orderFulfilment;
 
-let emptyOrderbook: orderbook = { orders: [] };
+let emptyOrderbook: orderbook = { buys: [], sells: [] };
 
 let makeOrder id price qty direction => { id, price, qty, direction };
 let isNotEmptyOrder order => order.qty > 0.0;
@@ -22,18 +22,25 @@ let (mapPair, replace, joinList) = Util.(mapPair, replace, joinList);
 
 let addOrder order orderbook => {
   if (order.qty > 0.0) {
-    { orders: orderbook.orders @ [order] }
+    {
+      buys: order.direction == Buy ? orderbook.buys @ [order] : orderbook.buys,
+      sells: order.direction == Sell ? orderbook.sells @ [order] : orderbook.sells,
+    }
   } else {
     orderbook
   };
 };
-let replaceOrder sourceOrder newOrder orderbook =>
-  ({ orders: (List.map (replace sourceOrder newOrder) orderbook.orders) });
-let cleanEmptyOrders orderbook =>
-  ({ orders: (List.filter isNotEmptyOrder orderbook.orders) });
+let replaceOrder sourceOrder newOrder orderbook => ({
+  buys: (List.map (replace sourceOrder newOrder) orderbook.buys),
+  sells: (List.map (replace sourceOrder newOrder) orderbook.sells),
+});
+let cleanEmptyOrders orderbook => ({
+  buys: (List.filter isNotEmptyOrder orderbook.buys),
+  sells: (List.filter isNotEmptyOrder orderbook.sells),
+});
 
-let getBuys orderbook => orderbook.orders |> List.filter (fun order => order.direction == Buy);
-let getSells orderbook => orderbook.orders |> List.filter (fun order => order.direction == Sell);
+let getBuys orderbook => orderbook.buys;
+let getSells orderbook => orderbook.sells;
 let oppositeOrders order orderbook => order.direction == Buy ? (getSells orderbook) : (getBuys orderbook);
 
 let displayOrder order => (string_of_float order.price) ^ " (qty: " ^ (string_of_float order.qty) ^ ")";
@@ -148,12 +155,12 @@ let test () => {
   let o2 = makeOrder 2 9.0 2.0 Sell;
   let (ob1, ex1) = executeOrders emptyOrderbook [o1, o2];
 
-  expect ({ orders: [makeOrder 2 9.0 1.0 Sell] }) [Execution (FullFulfilment 1 10.0) (PartialFulfilment 2 10.0 1.0)] ob1 ex1;
+  expect ({ buys: [], sells: [makeOrder 2 9.0 1.0 Sell] }) [Execution (FullFulfilment 1 10.0) (PartialFulfilment 2 10.0 1.0)] ob1 ex1;
 
   let o3 = makeOrder 3 9.5 1.0 Sell;
   let o4 = makeOrder 4 10.0 2.0 Buy;
   let (ob2, ex2) = executeOrders ob1 [o3, o4];
 
-  expect ({ orders: [] }) [Execution (PartialFulfilment 4 9.0 1.0) (FullFulfilment 2 9.0), Execution (FullFulfilment 4 9.5) (FullFulfilment 3 9.5)] ob2 ex2;
+  expect ({ buys: [], sells: [] }) [Execution (PartialFulfilment 4 9.0 1.0) (FullFulfilment 2 9.0), Execution (FullFulfilment 4 9.5) (FullFulfilment 3 9.5)] ob2 ex2;
 };
 test ();
