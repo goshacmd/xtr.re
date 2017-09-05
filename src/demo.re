@@ -5,12 +5,12 @@ type direction = Buy | Sell;
 type order = { id, price, qty, direction };
 type orderbook = { orders: list order };
 
-type orderExecution =
-  | FullyExecuted id price
-  | PartiallyExecuted id price qty
+type orderFulfilment  =
+  | FullFulfilment id price
+  | PartialFulfilment id price qty
   ;
 
-type executionResult = list (orderExecution, orderExecution);
+type orderExecution = Execution orderFulfilment orderFulfilment;
 
 let emptyOrderbook: orderbook = { orders: [] };
 
@@ -26,10 +26,16 @@ let replaceOrder sourceOrder newOrder orderbook =>
 let cleanEmptyOrders orderbook =>
   ({ orders: (List.filter isNotEmptyOrder orderbook.orders) });
 
+let getBuys orderbook => orderbook.orders |> List.filter (fun order => order.direction == Buy);
+let getSells orderbook => orderbook.orders |> List.filter (fun order => order.direction == Sell);
+let oppositeOrders order orderbook => order.direction == Buy ? (getSells orderbook) : (getBuys orderbook);
+let getAllOrders orderbook => orderbook.orders;
+
 let displayOrder order => (string_of_float order.price) ^ " (qty: " ^ (string_of_float order.qty) ^ ")";
 
 let displayOrderbook orderbook => {
-  let (buys, sells) = List.partition (fun order => order.direction == Buy) orderbook.orders;
+  let buys = getBuys orderbook;
+  let sells = getSells orderbook;
   let orderCompare order1 order2 => compare order1.price order2.price;
   let sortedBuys = List.sort orderCompare buys;
   let sortedSells = List.sort orderCompare sells;
@@ -44,13 +50,15 @@ let displayOrderbook orderbook => {
   "Asks:\n" ^ sellsDisplay ^ "\n----------\n" ^ "Bids:\n" ^ buysDisplay
 };
 
+let displayFulfilment f => switch f {
+  | FullFulfilment orderId price => "(Filled order #" ^ (string_of_int orderId) ^ ", @ " ^ (string_of_float price) ^ ")"
+  | PartialFulfilment orderId price qty => "(Partially filled order #" ^ (string_of_int orderId) ^ ", " ^ (string_of_float qty) ^ " @ " ^ (string_of_float price) ^ ")"
+};
 let displayExecution exec => switch exec {
-  | FullyExecuted orderId price => "(Filled order #" ^ (string_of_int orderId) ^ ", @ " ^ (string_of_float price) ^ ")"
-  | PartiallyExecuted orderId price qty => "(Partially filled order #" ^ (string_of_int orderId) ^ ", " ^ (string_of_float qty) ^ " @ " ^ (string_of_float price) ^ ")"
+  | Execution bid ask => (displayFulfilment bid) ^ " + " ^ (displayFulfilment ask);
 };
 let displayExecutions execs => execs
-  |> List.map (mapPair displayExecution)
-  |> List.map (fun (a, b) => a ^ " + " ^ b)
+  |> List.map displayExecution
   |> joinList "\n";
 
 
@@ -70,23 +78,25 @@ let executeMutualOrders order fill1 => {
   let atPrice = fill1.price;
 
   let res1 = if (leftOrder.qty == 0.0) {
-    FullyExecuted order.id atPrice
+    FullFulfilment order.id atPrice
   } else {
-    PartiallyExecuted order.id atPrice qtyToFill
+    PartialFulfilment order.id atPrice qtyToFill
   };
 
   let res2 = if (leftFill.qty == 0.0) {
-    FullyExecuted leftFill.id atPrice
+    FullFulfilment leftFill.id atPrice
   } else {
-    PartiallyExecuted leftFill.id atPrice qtyToFill
+    PartialFulfilment leftFill.id atPrice qtyToFill
   };
 
-  let execution = (res2, res1);
+  let bid = order.direction == Buy ? res1 : res2;
+  let ask = order.direction == Sell ? res1 : res2;
+  let execution = Execution bid ask;
 
   (leftOrder, leftFill, execution);
 };
 let executeOrder order orderbook => {
-  let possibleFills = List.filter (canFill order) orderbook.orders;
+  let possibleFills = oppositeOrders order orderbook |> List.filter (canFill order);
 
   let (newOrderbook, executions, _) = List.fold_left (fun (_orderbook, executions, _order) fill => {
     let (leftOrder, leftFill, execution) = executeMutualOrders _order fill;
@@ -102,7 +112,7 @@ let executeOrder order orderbook => {
 
   (newOrderbook, executions);
 };
-let executeOn orderbook => orderbook.orders |>
+let executeOn orderbook => getAllOrders orderbook |>
   List.fold_left (fun execution order => {
     let (_orderbook, executions) = execution;
     let (new_orderbook, new_executions) = executeOrder order (addOrder order _orderbook);
@@ -136,13 +146,13 @@ let test () => {
   let ob1 = emptyOrderbook |> addOrder o1 |> addOrder o2;
   let (ob2, ex1) = executeOn ob1;
 
-  expect ({ orders: [makeOrder 2 9.0 1.0 Sell] }) [(FullyExecuted 1 10.0, PartiallyExecuted 2 10.0 1.0)] ob2 ex1;
+  expect ({ orders: [makeOrder 2 9.0 1.0 Sell] }) [Execution (FullFulfilment 1 10.0) (PartialFulfilment 2 10.0 1.0)] ob2 ex1;
 
   let o3 = makeOrder 3 9.5 1.0 Sell;
   let o4 = makeOrder 4 10.0 2.0 Buy;
   let ob3 = ob2 |> addOrder o3 |> addOrder o4;
   let (ob4, ex2) = executeOn ob3;
 
-  expect ({ orders: [] }) [(FullyExecuted 2 9.0, PartiallyExecuted 4 9.0 1.0), (FullyExecuted 3 9.5, FullyExecuted 4 9.5)] ob4 ex2;
+  expect ({ orders: [] }) [Execution (PartialFulfilment 4 9.0 1.0) (FullFulfilment 2 9.0), Execution (FullFulfilment 4 9.5) (FullFulfilment 3 9.5)] ob4 ex2;
 };
 test ();
