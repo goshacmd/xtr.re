@@ -15,29 +15,39 @@ type orderExecution = Execution orderFulfilment orderFulfilment;
 let emptyOrderbook: orderbook = { buys: [], sells: [] };
 
 let makeOrder id price qty direction => { id, price, qty, direction };
-let isNotEmptyOrder order => order.qty > 0.0;
 let subQuantity qtyDiff order => makeOrder order.id order.price (order.qty -. qtyDiff) order.direction;
 
 let (mapPair, replace, joinList) = Util.(mapPair, replace, joinList);
+let isNotEqual x y => x != y;
 
-let addOrder order orderbook => {
-  if (order.qty > 0.0) {
-    {
-      buys: order.direction == Buy ? orderbook.buys @ [order] : orderbook.buys,
-      sells: order.direction == Sell ? orderbook.sells @ [order] : orderbook.sells,
-    }
-  } else {
-    orderbook
-  };
+let overBuys fn orderbook => ({ ...orderbook, buys: fn orderbook.buys });
+let overSells fn orderbook => ({ ...orderbook, sells: fn orderbook.sells });
+
+let addBuyOrder order orderbook => {
+  if (order.qty > 0.0) { overBuys (fun x => x @ [order]) orderbook } else { orderbook }
 };
-let replaceOrder sourceOrder newOrder orderbook => ({
-  buys: (List.map (replace sourceOrder newOrder) orderbook.buys),
-  sells: (List.map (replace sourceOrder newOrder) orderbook.sells),
-});
-let cleanEmptyOrders orderbook => ({
-  buys: (List.filter isNotEmptyOrder orderbook.buys),
-  sells: (List.filter isNotEmptyOrder orderbook.sells),
-});
+let addSellOrder order orderbook => {
+  if (order.qty > 0.0) { overSells (fun x => x @ [order]) orderbook } else { orderbook }
+};
+let addOrder order => order.direction == Buy ? addBuyOrder order : addSellOrder order;
+
+let removeBuyOrder order orderbook => overBuys (List.filter (isNotEqual order)) orderbook;
+let removeSellOrder order orderbook => overSells (List.filter (isNotEqual order)) orderbook;
+let replaceBuyOrder sourceOrder newOrder orderbook => {
+  if (newOrder.qty > 0.0) {
+    overBuys (List.map (replace sourceOrder newOrder)) orderbook
+  } else {
+    removeBuyOrder sourceOrder orderbook
+  }
+};
+let replaceSellOrder sourceOrder newOrder orderbook => {
+  if (newOrder.qty > 0.0) {
+    overSells (List.map (replace sourceOrder newOrder)) orderbook
+  } else {
+    removeSellOrder sourceOrder orderbook
+  }
+};
+let replaceOrder sourceOrder => sourceOrder.direction == Buy ? replaceBuyOrder sourceOrder : replaceSellOrder sourceOrder;
 
 let getBuys orderbook => orderbook.buys;
 let getSells orderbook => orderbook.sells;
@@ -113,10 +123,7 @@ let executeOrder order orderbook => {
   let (newOrderbook, executions, leftOrder) = List.fold_left (fun (_orderbook, executions, _order) fill => {
     let (leftOrder, leftFill, execution) = executeMutualOrders _order fill;
 
-    let newOrderbook = _orderbook
-      |> replaceOrder fill leftFill
-      |> cleanEmptyOrders
-      ;
+    let newOrderbook = _orderbook |> replaceOrder fill leftFill;
 
     (newOrderbook, executions @ [execution], leftOrder)
   }) (orderbook, [], order) possibleFills;
