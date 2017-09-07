@@ -50,10 +50,10 @@ let oppositeOrders order orderbook => order.direction == Buy ? (getSells orderbo
 
 let displayOrder order => (string_of_float order.price) ^ " (qty: " ^ (string_of_float order.qty) ^ ")";
 
+let orderCompare order1 order2 => compare order1.price order2.price;
 let displayOrderbook orderbook => {
   let buys = getBuys orderbook;
   let sells = getSells orderbook;
-  let orderCompare order1 order2 => compare order1.price order2.price;
   let sortedBuys = List.sort orderCompare buys;
   let sortedSells = List.sort orderCompare sells;
 
@@ -61,6 +61,7 @@ let displayOrderbook orderbook => {
     |> List.map displayOrder
     |> joinList "\n";
   let sellsDisplay = sortedSells
+    |> List.rev
     |> List.map displayOrder
     |> joinList "\n";
 
@@ -97,14 +98,21 @@ let executeMutualOrders order fill1 => {
   (leftOrder, leftFill, execution);
 };
 let executeOrder order orderbook => {
-  let possibleFills = oppositeOrders order orderbook |> List.filter (canFill order);
+  let possibleFills = oppositeOrders order orderbook
+    |> List.filter (canFill order)
+    |> List.sort (fun a b => (order.direction == Sell ? -1 : 1) * (orderCompare a b))
+    ;
 
   let (newOrderbook, executions, leftOrder) = List.fold_left (fun (_orderbook, executions, _order) fill => {
-    let (leftOrder, leftFill, execution) = executeMutualOrders _order fill;
+    if (_order.qty > 0.0) {
+      let (leftOrder, leftFill, execution) = executeMutualOrders _order fill;
 
-    let newOrderbook = _orderbook |> replaceOrder fill leftFill;
+      let newOrderbook = _orderbook |> replaceOrder fill leftFill;
 
-    (newOrderbook, executions @ [execution], leftOrder)
+      (newOrderbook, executions @ [execution], leftOrder)
+    } else {
+      (_orderbook, executions, _order)
+    }
   }) (orderbook, [], order) possibleFills;
 
   (newOrderbook |> addOrder leftOrder, executions);
@@ -148,5 +156,12 @@ let test () => {
   let (ob2, ex2) = executeOrders ob1 [o3, o4];
 
   expect ({ buys: [], sells: [] }) [Execution 4 2 9.0 1.0, Execution 4 3 9.5 1.0] ob2 ex2;
+
+  let o5 = makeOrder 5 10.0 1.0 Sell;
+  let o6 = makeOrder 6 9.0 1.0 Sell;
+  let o7 = makeOrder 7 10.0 0.5 Buy;
+  let (ob3, ex3) = executeOrders emptyOrderbook [o5, o6, o7];
+
+  expect ({ buys: [], sells: [makeOrder 5 10.0 1.0 Sell, makeOrder 6 9.0 0.5 Sell] }) [Execution 7 6 9.0 0.5] ob3 ex3;
 };
 test ();
