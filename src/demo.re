@@ -86,36 +86,48 @@ let canFill targetOrder possibleFill => switch targetOrder.direction {
     | Sell => false
   }
 };
-let executeMutualOrders order fill1 => {
-  let qtyToFill = min fill1.qty order.qty;
-  let (leftFill, leftOrder) = (fill1, order) |> mapPair (subQuantity qtyToFill);
-  let atPrice = fill1.price;
-
-  let bid = order.direction == Buy ? order : fill1;
-  let ask = order.direction == Sell ? order : fill1;
-  let execution = Execution bid.id ask.id atPrice qtyToFill;
-
-  (leftOrder, leftFill, execution);
-};
-let executeOrder order orderbook => {
+let findMatches order orderbook => {
   let possibleFills = oppositeOrders order orderbook
     |> List.filter (canFill order)
-    |> List.sort (fun a b => (order.direction == Sell ? -1 : 1) * (orderCompare a b))
-    ;
+    |> List.sort (fun a b => (order.direction == Sell ? -1 : 1) * (orderCompare a b));
 
-  let (newOrderbook, executions, leftOrder) = List.fold_left (fun (_orderbook, executions, _order) fill => {
-    if (_order.qty > 0.0) {
-      let (leftOrder, leftFill, execution) = executeMutualOrders _order fill;
+  let (matches, _) = List.fold_left (fun (matches, leftToFill) fill => {
+    if (leftToFill > 0.0) {
+      let qtyToFill = min fill.qty leftToFill;
+      let atPrice = fill.price;
 
-      let newOrderbook = _orderbook |> replaceOrder fill leftFill;
+      let bid = order.direction == Buy ? order : fill;
+      let ask = order.direction == Sell ? order : fill;
+      let execution = Execution bid.id ask.id atPrice qtyToFill;
 
-      (newOrderbook, executions @ [execution], leftOrder)
+      (matches @ [execution], leftToFill -. qtyToFill);
     } else {
-      (_orderbook, executions, _order)
+      (matches, leftToFill);
     }
-  }) (orderbook, [], order) possibleFills;
+  }) ([], order.qty) possibleFills;
 
-  (newOrderbook |> addOrder leftOrder, executions);
+  matches
+};
+let applyMatch _match orderbook => switch _match {
+  | Execution bidId askId _ qty => {
+    let originalBid = orderbook.buys |> List.find (fun order => order.id == bidId);
+    let originalAsk = orderbook.sells |> List.find (fun order => order.id == askId);
+
+    let newBid = subQuantity qty originalBid;
+    let newAsk = subQuantity qty originalAsk;
+
+    let processBid = newBid.qty > 0.0 ? (replaceBuyOrder originalBid newBid) : (removeBuyOrder originalBid);
+    let processAsk = newAsk.qty > 0.0 ? (replaceSellOrder originalAsk newAsk) : (removeSellOrder originalAsk);
+
+    orderbook |> processBid |> processAsk
+  };
+};
+let applyMatches matches orderbook => matches
+  |> List.fold_left (fun _orderbook _match => applyMatch _match _orderbook) orderbook;
+let executeOrder order orderbook => {
+  let matches = findMatches order orderbook;
+  let newOrderbook = applyMatches matches (orderbook |> addOrder order);
+  (newOrderbook, matches)
 };
 
 let expect expectedOrderbook expectedExecutions actualOrderbook actualExecutions => {
