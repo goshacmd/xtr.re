@@ -24,20 +24,18 @@ let addSellOrder order orderbook => {
   if (order.qty > 0.0) { overSells (fun x => x @ [order]) orderbook } else { orderbook }
 };
 
-let removeBuyOrder order orderbook => overBuys (List.filter (isNotEqual order)) orderbook;
-let removeSellOrder order orderbook => overSells (List.filter (isNotEqual order)) orderbook;
 let replaceBuyOrder sourceOrder newOrder orderbook => {
   if (newOrder.qty > 0.0) {
     overBuys (List.map (replace sourceOrder newOrder)) orderbook
   } else {
-    removeBuyOrder sourceOrder orderbook
+    overBuys (List.filter (isNotEqual sourceOrder)) orderbook;
   }
 };
 let replaceSellOrder sourceOrder newOrder orderbook => {
   if (newOrder.qty > 0.0) {
     overSells (List.map (replace sourceOrder newOrder)) orderbook
   } else {
-    removeSellOrder sourceOrder orderbook
+    overSells (List.filter (isNotEqual sourceOrder)) orderbook;
   }
 };
 
@@ -77,11 +75,8 @@ let applyMatch _match orderbook => switch _match {
     let originalBid = orderbook.buys |> List.find (fun order => order.id == bidId);
     let originalAsk = orderbook.sells |> List.find (fun order => order.id == askId);
 
-    let newBid = subQuantity qty originalBid;
-    let newAsk = subQuantity qty originalAsk;
-
-    let processBid = newBid.qty > 0.0 ? (replaceBuyOrder originalBid newBid) : (removeBuyOrder originalBid);
-    let processAsk = newAsk.qty > 0.0 ? (replaceSellOrder originalAsk newAsk) : (removeSellOrder originalAsk);
+    let processBid = replaceBuyOrder originalBid (subQuantity qty originalBid);
+    let processAsk = replaceSellOrder originalAsk (subQuantity qty originalAsk);
 
     orderbook |> processBid |> processAsk
   };
