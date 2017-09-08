@@ -20,30 +20,30 @@ let expect expectedOrderbook expectedExecutions actualOrderbook actualExecutions
   Js.log "";
 };
 
-let executeOrders orderbook orders => orders |>
-  List.fold_left (fun (_orderbook, executions) order => {
-    let (new_orderbook, new_executions) = executeOrder order _orderbook;
+let executeOrders orderbook orderDirectionPairs => orderDirectionPairs |>
+  List.fold_left (fun (_orderbook, executions) (direction, order) => {
+    let (new_orderbook, new_executions) = executeOrder direction order _orderbook;
     (new_orderbook, executions @ new_executions)
   }) (orderbook, []);
 
 let test () => {
-  let o1 = makeOrder 1 10.0 1.0 Buy;
-  let o2 = makeOrder 2 9.0 2.0 Sell;
-  let (ob1, ex1) = executeOrders emptyOrderbook [o1, o2];
+  let o1 = makeOrder 1 10.0 1.0;
+  let o2 = makeOrder 2 9.0 2.0;
+  let (ob1, ex1) = executeOrders emptyOrderbook [(Buy, o1), (Sell, o2)];
 
-  expect ({ buys: [], sells: [makeOrder 2 9.0 1.0 Sell] }) [Execution 1 2 10.0 1.0] ob1 ex1;
+  expect ({ buys: [], sells: [makeOrder 2 9.0 1.0] }) [Execution 1 2 10.0 1.0] ob1 ex1;
 
-  let o3 = makeOrder 3 9.5 1.0 Sell;
-  let o4 = makeOrder 4 10.0 2.0 Buy;
-  let (ob2, ex2) = executeOrders ob1 [o3, o4];
+  let o3 = makeOrder 3 9.5 1.0;
+  let o4 = makeOrder 4 10.0 2.0;
+  let (ob2, ex2) = executeOrders ob1 [(Sell, o3), (Buy, o4)];
 
   expect ({ buys: [], sells: [] }) [Execution 4 2 9.0 1.0, Execution 4 3 9.5 1.0] ob2 ex2;
 
-  let o5 = makeOrder 5 10.0 1.0 Sell;
-  let o6 = makeOrder 6 9.0 1.0 Sell;
-  let o7 = makeOrder 7 10.0 0.5 Buy;
-  let (ob3, ex3) = executeOrders emptyOrderbook [o5, o6, o7];
+  let o5 = makeOrder 5 10.0 1.0;
+  let o6 = makeOrder 6 9.0 1.0;
+  let o7 = makeOrder 7 10.0 0.5;
+  let (ob3, ex3) = executeOrders emptyOrderbook [(Sell, o5), (Sell, o6), (Buy, o7)];
 
-  expect ({ buys: [], sells: [makeOrder 5 10.0 1.0 Sell, makeOrder 6 9.0 0.5 Sell] }) [Execution 7 6 9.0 0.5] ob3 ex3;
+  expect ({ buys: [], sells: [makeOrder 5 10.0 1.0, makeOrder 6 9.0 0.5] }) [Execution 7 6 9.0 0.5] ob3 ex3;
 };
 test ();

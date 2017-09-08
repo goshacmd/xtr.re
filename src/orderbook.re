@@ -4,15 +4,15 @@ type id = int;
 type price = float;
 type qty = float;
 type direction = Buy | Sell;
-type order = { id, price, qty, direction };
+type order = { id, price, qty };
 type orderbook = { buys: list order, sells: list order };
 
 type orderExecution = Execution id id price qty;
 
 let emptyOrderbook: orderbook = { buys: [], sells: [] };
 
-let makeOrder id price qty direction => { id, price, qty, direction };
-let subQuantity qtyDiff order => makeOrder order.id order.price (order.qty -. qtyDiff) order.direction;
+let makeOrder id price qty => { id, price, qty };
+let subQuantity qtyDiff order => makeOrder order.id order.price (order.qty -. qtyDiff);
 
 let overBuys fn orderbook => ({ ...orderbook, buys: fn orderbook.buys });
 let overSells fn orderbook => ({ ...orderbook, sells: fn orderbook.sells });
@@ -23,7 +23,6 @@ let addBuyOrder order orderbook => {
 let addSellOrder order orderbook => {
   if (order.qty > 0.0) { overSells (fun x => x @ [order]) orderbook } else { orderbook }
 };
-let addOrder order => order.direction == Buy ? addBuyOrder order : addSellOrder order;
 
 let removeBuyOrder order orderbook => overBuys (List.filter (isNotEqual order)) orderbook;
 let removeSellOrder order orderbook => overSells (List.filter (isNotEqual order)) orderbook;
@@ -44,25 +43,25 @@ let replaceSellOrder sourceOrder newOrder orderbook => {
 
 let getBuys orderbook => orderbook.buys;
 let getSells orderbook => orderbook.sells;
-let oppositeOrders order orderbook => order.direction == Buy ? (getSells orderbook) : (getBuys orderbook);
+let oppositeOrders direction orderbook => direction == Buy ? (getSells orderbook) : (getBuys orderbook);
 let orderCompare order1 order2 => compare order1.price order2.price;
 
-let canFill targetOrder possibleFill =>
-  if (targetOrder.direction == Buy) { targetOrder.price >= possibleFill.price } else { targetOrder.price <= possibleFill.price };
+let canFill direction targetOrder possibleFill =>
+  if (direction == Buy) { targetOrder.price >= possibleFill.price } else { targetOrder.price <= possibleFill.price };
 let bestSortingFor direction =>
   fun a b => (direction == Sell ? -1 : 1) * (orderCompare a b);
-let findMatches order orderbook => {
-  let possibleFills = oppositeOrders order orderbook
-    |> List.filter (canFill order)
-    |> List.sort (bestSortingFor order.direction);
+let findMatches direction order orderbook => {
+  let possibleFills = oppositeOrders direction orderbook
+    |> List.filter (canFill direction order)
+    |> List.sort (bestSortingFor direction);
 
   let (matches, _) = List.fold_left (fun (matches, leftToFill) fill => {
     if (leftToFill > 0.0) {
       let qtyToFill = min fill.qty leftToFill;
       let atPrice = fill.price;
 
-      let bid = order.direction == Buy ? order : fill;
-      let ask = order.direction == Sell ? order : fill;
+      let bid = direction == Buy ? order : fill;
+      let ask = direction == Sell ? order : fill;
       let execution = Execution bid.id ask.id atPrice qtyToFill;
 
       (matches @ [execution], leftToFill -. qtyToFill);
@@ -89,8 +88,9 @@ let applyMatch _match orderbook => switch _match {
 };
 let applyMatches matches orderbook => matches
   |> List.fold_left (fun _orderbook _match => applyMatch _match _orderbook) orderbook;
-let executeOrder order orderbook => {
-  let matches = findMatches order orderbook;
+let executeOrder direction order orderbook => {
+  let matches = findMatches direction order orderbook;
+  let addOrder = direction == Buy ? addBuyOrder : addSellOrder;
   let newOrderbook = applyMatches matches (orderbook |> addOrder order);
   (newOrderbook, matches)
 };
